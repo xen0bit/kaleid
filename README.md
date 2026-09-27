@@ -36,6 +36,57 @@ KALEID_DATABASE_URL=postgres://user:pass@host:5432/db ./kaleid
 
 Migrations run automatically on start, or on their own with `kaleid migrate`.
 
+## Go client
+
+Kaleid serves Chroma's API, so the official Chroma clients (Python, JS, Rust)
+work against it unchanged. For Go, `pkg/client` is a thin client with no
+dependencies beyond the standard library. It works against both Kaleid and
+Chroma:
+
+```go
+import "github.com/xen0bit/kaleid/pkg/client"
+
+c := client.New("http://localhost:8000", client.WithToken("s3cret")) // token is optional
+col, err := c.CreateCollection(ctx, "docs", &client.CreateCollectionOptions{
+	HNSW:        &client.HNSWConfig{Space: client.SpaceCosine},
+	GetOrCreate: true,
+})
+err = col.Add(ctx, client.Records{
+	IDs:        []string{"a", "b"},
+	Embeddings: [][]float32{{0.1, 0.9}, {0.8, 0.2}},
+	Documents:  []string{"Postgres tips", "Vector search basics"},
+	Metadatas:  []client.Metadata{{"year": 2024}, {"year": 2026}},
+})
+res, err := col.Query(ctx, client.QueryOptions{
+	Embeddings: [][]float32{{0.7, 0.3}},
+	NResults:   5,
+	Where:      client.Where{"year": client.Where{"$gte": 2025}},
+})
+
+// Hybrid search (Kaleid, Chroma Cloud): fuse dense and sparse rankings.
+hits, err := col.Search(ctx, client.Search{
+	Rank: client.RRF(60,
+		client.Knn(queryVec, client.KnnOptions{ReturnRank: true}),
+		client.KnnSparse(bm25Vec, "bm25", client.KnnOptions{ReturnRank: true}),
+	),
+	Limit:  10,
+	Select: []string{client.KeyDocument, client.KeyScore},
+})
+```
+
+The client covers tenants, databases, collections, add, upsert, update,
+delete, get, query, count, search, fork and indexing status. Server errors
+come back as `*client.Error`, which you can test with `client.IsNotFound`,
+`client.IsConflict` and `client.IsInvalidArgument`.
+
+Two things to know:
+
+- **Ints and floats stay distinct.** `Metadata` keeps the difference on the
+  wire, so `2.0` is stored as a float, which plain `encoding/json` would not
+  do.
+- **Embeddings are your job.** The client sends vectors you provide and does
+  not call an embedding model.
+
 ## Configuration
 
 Every flag can also be set with the environment variable shown.
@@ -115,6 +166,9 @@ Where Kaleid differs on purpose:
 - **Some error messages differ.** Regex syntax errors, and errors that Chroma
   builds from Rust `Debug` output, have different text. The status code and
   error type still match.
+- **No stale array metadata.** In Chroma 1.5.9, deleting a collection leaves
+  its array metadata values behind, and they reappear on unrelated records in
+  collections created later. Kaleid drops them with the collection.
 - **Reads are always consistent.** `read_level` is accepted and ignored,
   because every committed write is visible to the next read.
 

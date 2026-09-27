@@ -94,6 +94,15 @@ func DecodeBase64Embedding(s string) ([]float32, error) {
 	return out, nil
 }
 
+// EncodeBase64Embedding packs f32 values little-endian and base64-encodes them.
+func EncodeBase64Embedding(v []float32) string {
+	b := make([]byte, len(v)*4)
+	for i, f := range v {
+		binary.LittleEndian.PutUint32(b[i*4:], math.Float32bits(f))
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
 // AppendFloat32s appends a JSON array of f32 values (null when v is nil).
 func AppendFloat32s(buf []byte, v []float32) []byte {
 	if v == nil {

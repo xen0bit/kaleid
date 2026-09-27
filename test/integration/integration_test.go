@@ -44,13 +44,13 @@ func newServer(t *testing.T, provider auth.Provider) *httptest.Server {
 	return srv
 }
 
-type client struct {
+type rawClient struct {
 	t     *testing.T
 	base  string
 	token string
 }
 
-func (c *client) do(method, path string, body any) (int, map[string]any, []byte) {
+func (c *rawClient) do(method, path string, body any) (int, map[string]any, []byte) {
 	c.t.Helper()
 	var rdr io.Reader
 	if body != nil {
@@ -73,7 +73,7 @@ func (c *client) do(method, path string, body any) (int, map[string]any, []byte)
 	return resp.StatusCode, m, raw
 }
 
-func (c *client) must(method, path string, body any) map[string]any {
+func (c *rawClient) must(method, path string, body any) map[string]any {
 	c.t.Helper()
 	code, m, raw := c.do(method, path, body)
 	if code >= 300 {
@@ -86,7 +86,7 @@ const base = "/api/v2/tenants/default_tenant/databases/default_database/collecti
 
 func uniq(prefix string) string { return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano()) }
 
-func (c *client) createCollection(body map[string]any) string {
+func (c *rawClient) createCollection(body map[string]any) string {
 	m := c.must("POST", base, body)
 	return m["id"].(string)
 }
@@ -102,7 +102,7 @@ func ids(m map[string]any, i int) []string {
 
 func TestSearchDenseFilterSelect(t *testing.T) {
 	srv := newServer(t, auth.None{})
-	c := &client{t: t, base: srv.URL}
+	c := &rawClient{t: t, base: srv.URL}
 	id := c.createCollection(map[string]any{"name": uniq("srch")})
 	c.must("POST", base+"/"+id+"/add", map[string]any{
 		"ids":        []string{"a", "b", "c", "d"},
@@ -143,7 +143,7 @@ func TestSearchDenseFilterSelect(t *testing.T) {
 
 func TestSearchRRFAndGroupBy(t *testing.T) {
 	srv := newServer(t, auth.None{})
-	c := &client{t: t, base: srv.URL}
+	c := &rawClient{t: t, base: srv.URL}
 	id := c.createCollection(map[string]any{"name": uniq("rrf"), "schema": map[string]any{
 		"defaults": map[string]any{},
 		"keys": map[string]any{"sparse": map[string]any{"sparse_vector": map[string]any{
@@ -204,7 +204,7 @@ func TestSearchRRFAndGroupBy(t *testing.T) {
 
 func TestForkAndIndexingStatus(t *testing.T) {
 	srv := newServer(t, auth.None{})
-	c := &client{t: t, base: srv.URL}
+	c := &rawClient{t: t, base: srv.URL}
 	name := uniq("fork")
 	id := c.createCollection(map[string]any{"name": name, "metadata": map[string]any{"hnsw:space": "cosine"}})
 	c.must("POST", base+"/"+id+"/add", map[string]any{"ids": []string{"a", "b"}, "embeddings": [][]float32{{1, 0}, {0, 1}}})
@@ -243,14 +243,14 @@ func TestTokenAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := newServer(t, provider)
-	anon := &client{t: t, base: srv.URL}
+	anon := &rawClient{t: t, base: srv.URL}
 	if code, _, _ := anon.do("GET", "/api/v2/heartbeat", nil); code != 200 {
 		t.Fatal("heartbeat must not require auth")
 	}
 	if code, m, _ := anon.do("GET", base, nil); code != 401 || m["error"] != "AuthError" {
 		t.Fatalf("expected 401, got %d %v", code, m)
 	}
-	scoped := &client{t: t, base: srv.URL, token: "tenant-token"}
+	scoped := &rawClient{t: t, base: srv.URL, token: "tenant-token"}
 	id := scoped.must("GET", "/api/v2/auth/identity", nil)
 	if id["user_id"] != "u1" || id["tenant"] != "default_tenant" {
 		t.Fatalf("identity %v", id)
@@ -290,7 +290,7 @@ func l2sq(a, b []float32) float64 {
 // fallback), including a halfvec-indexed collection above 2000 dimensions.
 func TestFilteredRecallIsExact(t *testing.T) {
 	srv := newServer(t, auth.None{})
-	c := &client{t: t, base: srv.URL}
+	c := &rawClient{t: t, base: srv.URL}
 	for _, dim := range []int{16, 2048} {
 		r := rand.New(rand.NewSource(int64(dim)))
 		id := c.createCollection(map[string]any{"name": uniq(fmt.Sprintf("recall%d", dim))})
