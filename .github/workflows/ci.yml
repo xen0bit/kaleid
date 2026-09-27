@@ -31,7 +31,7 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: Unit tests
-        run: go test -race -count=1 ./internal/... ./pkg/...
+        run: go test -race -count=1 ./internal/... ./pkg/... ./sample_apps/...
 
   integration:
     name: Integration and differential tests
@@ -65,7 +65,10 @@ jobs:
       - name: Start Kaleid
         run: |
           KALEID_DATABASE_URL="$DATABASE_URL" KALEID_LISTEN=:8001 ./bin/kaleid > kaleid.log 2>&1 &
+          KALEID_DATABASE_URL="$DATABASE_URL" KALEID_LISTEN=:8002 KALEID_AUTH_PROVIDER=token KALEID_AUTH_TOKEN=ci-token \
+            ./bin/kaleid > kaleid-auth.log 2>&1 &
           for i in $(seq 1 60); do curl -sf localhost:8001/api/v2/heartbeat && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf localhost:8002/api/v2/heartbeat && break; sleep 1; done
           for i in $(seq 1 60); do curl -sf localhost:8000/api/v2/heartbeat && break; sleep 1; done
           curl -sf localhost:8001/api/v2/heartbeat
           curl -sf localhost:8000/api/v2/heartbeat
@@ -78,6 +81,12 @@ jobs:
           CHROMA_URL: http://localhost:8000
           KALEID_URL: http://localhost:8001
         run: go test -count=1 -v ./test/compat/
+      - name: Examples and sample apps
+        env:
+          KALEID_URL: http://localhost:8001
+          KALEID_AUTH_URL: http://localhost:8002
+          KALEID_TOKEN: ci-token
+        run: test/examples/run.sh
       - name: Kaleid log
         if: failure()
         run: cat kaleid.log
