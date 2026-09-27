@@ -4,6 +4,27 @@ Section 12 records the scoping decisions made on 2026-09-26.
 
 Kaleid is a Go server that speaks the Chroma HTTP API (v2) and stores its data in PostgreSQL with pgvector. The goal is that the official clients work against Kaleid unchanged: Python `chromadb` / `chromadb-client`, JS `chromadb`, and the Rust client. Pointing `chromadb.HttpClient(host=...)` at Kaleid should behave the same as pointing it at Chroma.
 
+## Status (2026-09-27)
+
+- **Done:** M0–M6.
+  - The OSS API, the Search API, sparse/BM25, fork, CRN lookup, indexing_status and token auth are all implemented.
+  - The PR's CI runs:
+    - the differential tests against the official `chromadb/chroma:1.5.9` image;
+    - Chroma's own 1.5.9 test suite: the API tests plus the property tests for add, collections, tenant/database, embeddings and filtering;
+    - the Kaleid integration tests.
+- **Deferred:** M7 (conditional transactions and databases/by-id lookup) waits for a Chroma release that includes them.
+  - `GET /databases/by-id/{id}` is already served.
+
+**Where the build departs from this plan:**
+
+- HNSW indexes are built in bulk once a collection reaches `--index-threshold` records (default 10,000). Smaller collections are scanned exactly.
+- A parallel index build that runs out of shared memory is retried serially.
+- `$in` / `$nin` compile to jsonb `= ANY(...)`. Equality compiles to GIN-indexable `@>`.
+- Several Chroma quirks found in the upstream tests are matched:
+  - a `delete` by ids reports `len(ids)`;
+  - a query that asks for an unknown id fails with "Error finding id";
+  - filters on keys whose index is disabled are rejected.
+
 ## 0. Research basis
 
 Everything below comes from these sources, not from memory:
