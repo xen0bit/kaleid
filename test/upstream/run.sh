@@ -40,6 +40,8 @@ while IFS= read -r line; do
 done < "$HERE/deselect.txt"
 
 cd "$(dirname "$PKG")"
+# Some tests spawn `python`; make it the venv interpreter.
+export PATH="$WORK/venv/bin:$PATH"
 export CHROMA_INTEGRATION_TEST_ONLY=1
 export CHROMA_SERVER_HOST="${KALEID_HOST:-localhost}"
 export CHROMA_SERVER_HTTP_PORT="${KALEID_PORT:-8000}"

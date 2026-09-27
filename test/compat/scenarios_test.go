@@ -112,6 +112,7 @@ func TestRecordsSemantics(t *testing.T) {
 		{method: "POST", path: c + "/query", body: `{"query_embeddings":[[1,0,0]],"n_results":2,"ids":["b","c"]}`},
 		{method: "POST", path: c + "/query", body: `{"query_embeddings":[[1,0,0]],"where":{"k":{"$gte":2}}}`},
 		{method: "POST", path: c + "/query", body: `{"query_embeddings":[[1,0]]}`},
+		{method: "POST", path: c + "/query", body: `{"query_embeddings":[[1,0,0]],"ids":["a","missing"],"n_results":2}`},
 		{method: "POST", path: c + "/delete", body: `{"where":{"k":2.5}}`},
 		{method: "POST", path: c + "/delete", body: `{}`},
 		{method: "POST", path: c + "/delete", body: `{"ids":["n1","nope"]}`},
@@ -193,6 +194,19 @@ func TestFilters(t *testing.T) {
 		{method: "POST", path: c + "/get", body: `{"include":[],"where_document":{"$regex":"("}}`, ignore: []string{"message"}},
 		{method: "POST", path: c + "/delete", body: `{"where":{"i":{"$gte":2}},"limit":1}`},
 		get(`"where":{"i":{"$gte":2}}`),
+	})
+}
+
+func TestDisabledIndexes(t *testing.T) {
+	c := coll + "/{col}"
+	schema := `{"defaults":{},"keys":{"k":{"int":{"int_inverted_index":{"enabled":false,"config":{}}}},"#document":{"string":{"fts_index":{"enabled":false,"config":{}}}}}}`
+	run(t, []step{
+		{method: "POST", path: coll, body: `{"name":"noidx{sfx}","schema":` + schema + `}`, capture: "col"},
+		{method: "POST", path: c + "/add", body: `{"ids":["a"],"embeddings":[[1]],"documents":["doc"],"metadatas":[{"k":1,"s":"x"}]}`},
+		{method: "POST", path: c + "/get", body: `{"where":{"k":1}}`},
+		{method: "POST", path: c + "/get", body: `{"where":{"s":"x"}}`},
+		{method: "POST", path: c + "/get", body: `{"where_document":{"$contains":"doc"}}`},
+		{method: "POST", path: c + "/delete", body: `{"where":{"k":{"$gt":0}}}`},
 	})
 }
 

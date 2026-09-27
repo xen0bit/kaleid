@@ -225,6 +225,20 @@ func (s *Store) Query(ctx context.Context, c Collection, queries [][]float32, n 
 	if n == 0 || c.Dimension == nil || len(queries) == 0 {
 		return out, nil
 	}
+	if ids != nil {
+		// Chroma fails the whole query when a requested id does not exist.
+		want := map[string]bool{}
+		for _, id := range ids {
+			want[id] = true
+		}
+		var found int
+		if err := s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE id = ANY($1)`, dataTable(c.ID)), ids).Scan(&found); err != nil {
+			return nil, err
+		}
+		if found != len(want) {
+			return nil, apierr.Internal("Error executing plan: Internal error: Error finding id")
+		}
+	}
 	args := &filter.Args{}
 	conds, err := buildConds(ids, where, args, filter.DefaultColumns)
 	if err != nil {

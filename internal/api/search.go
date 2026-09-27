@@ -38,6 +38,9 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if err := checkFilterIndexes(c.Schema, pl.Filter); err != nil {
+			return err
+		}
 		payloads[i] = pl
 	}
 	results := make([][]store.SearchRecord, len(payloads))

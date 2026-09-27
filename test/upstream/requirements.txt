@@ -10,3 +10,4 @@ pandas
 mmh3
 fastapi
 opentelemetry-instrumentation-fastapi>=0.41b0
+snowballstemmer

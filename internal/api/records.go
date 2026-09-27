@@ -156,6 +156,9 @@ func (s *Server) deleteRecords(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := checkFilterIndexes(c.Schema, where); err != nil {
+		return err
+	}
 	var ids []string
 	if p.IDs != nil {
 		ids = *p.IDs
@@ -319,6 +322,9 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := checkFilterIndexes(c.Schema, where); err != nil {
+		return err
+	}
 	var ids []string
 	if p.IDs != nil {
 		ids = *p.IDs
@@ -374,6 +380,9 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) error {
 	}
 	where, err := filter.Parse(p.Where, p.WhereDocument)
 	if err != nil {
+		return err
+	}
+	if err := checkFilterIndexes(c.Schema, where); err != nil {
 		return err
 	}
 	n := 10
