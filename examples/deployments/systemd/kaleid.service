@@ -1,0 +1,39 @@
+# Kaleid as a systemd service.
+#
+# Install:
+#   sudo install -m 0755 kaleid /usr/local/bin/kaleid
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin kaleid
+#   sudo install -d -m 0750 -o root -g kaleid /etc/kaleid
+#   sudo install -m 0640 -o root -g kaleid kaleid.env /etc/kaleid/kaleid.env
+#   sudo cp kaleid.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now kaleid
+[Unit]
+Description=Kaleid (Chroma-compatible vector database on PostgreSQL)
+Documentation=https://github.com/xen0bit/kaleid
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kaleid
+Group=kaleid
+EnvironmentFile=/etc/kaleid/kaleid.env
+ExecStart=/usr/local/bin/kaleid serve
+Restart=on-failure
+RestartSec=2s
+
+# Kaleid is stateless; all data lives in PostgreSQL.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

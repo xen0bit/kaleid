@@ -1,0 +1,27 @@
+# Upstream Chroma 1.5.9 tests deselected when running against Kaleid, one
+# node id per line, each with the reason.
+
+# These start an in-process Chroma with its own local storage (sqlite or
+# persist directories, SSL, RBAC), so they never talk to the server under
+# test. They also fail against Chroma 1.5.9's own server in integration mode.
+chromadb/test/api/test_delete_database.py::test_collection_was_removed[python_sqlite_persistent][single-region]
+chromadb/test/db/test_log_purge.py::test_log_purge[python_sqlite_persistent][single-region]
+chromadb/test/db/test_log_purge.py::test_log_purge_with_multiple_collections[python_sqlite_persistent][single-region]
+chromadb/test/test_api.py::test_persist_index_loading[local_persist_api][single-region]
+chromadb/test/test_api.py::test_persist_index_loading_embedding_function[local_persist_api][single-region]
+chromadb/test/test_api.py::test_persist_index_get_or_create_embedding_function[local_persist_api][single-region]
+chromadb/test/test_api.py::test_persist[local_persist_api][single-region]
+chromadb/test/test_api.py::test_ssl_self_signed[fastapi_ssl][single-region]
+chromadb/test/test_api.py::test_ssl_self_signed_without_ssl_verify[fastapi_ssl][single-region]
+chromadb/test/test_chroma.py::GetAPITest::test_local_db[single-region]
+chromadb/test/auth/test_rbac_authz.py::test_delete_database_requires_rbac_permission[fastapi_server_basic_authn_rbac_authz][single-region]
+
+# Restarts the server between steps to check that the index was persisted.
+# It fails against Chroma 1.5.9's own server in integration mode too.
+chromadb/test/test_api.py::test_persist_index_loading_params[integration-classic][single-region]
+chromadb/test/test_api.py::test_persist_index_loading_params[async_integration-classic][single-region]
+
+# Asserts that local Chroma rejects sparse vector indexes. Kaleid supports
+# them, as Chroma Cloud does.
+chromadb/test/api/test_schema_e2e.py::test_sparse_vector_not_allowed_locally[integration][single-region]
+chromadb/test/api/test_schema_e2e.py::test_sparse_vector_not_allowed_locally[async_integration][single-region]

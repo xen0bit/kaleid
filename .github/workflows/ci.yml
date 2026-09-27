@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgres://kaleid:kaleid@localhost:5432/kaleid?sslmode=disable
+
+jobs:
+  lint-unit:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "Unformatted files:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: Unit tests
+        run: go test -race -count=1 ./internal/... ./pkg/... ./sample_apps/...
+
+  integration:
+    name: Integration and differential tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: kaleid
+          POSTGRES_PASSWORD: kaleid
+          POSTGRES_DB: kaleid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaleid"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+          --shm-size 1g
+      chroma:
+        image: chromadb/chroma:1.5.9
+        ports:
+          - 8000:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -o bin/kaleid ./cmd/kaleid
+      - name: Start Kaleid
+        run: |
+          KALEID_DATABASE_URL="$DATABASE_URL" KALEID_LISTEN=:8001 ./bin/kaleid > kaleid.log 2>&1 &
+          KALEID_DATABASE_URL="$DATABASE_URL" KALEID_LISTEN=:8002 KALEID_AUTH_PROVIDER=token KALEID_AUTH_TOKEN=ci-token \
+            ./bin/kaleid > kaleid-auth.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:8001/api/v2/heartbeat && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf localhost:8002/api/v2/heartbeat && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/v2/heartbeat && break; sleep 1; done
+          curl -sf localhost:8001/api/v2/heartbeat
+          curl -sf localhost:8000/api/v2/heartbeat
+      - name: Integration tests
+        env:
+          KALEID_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: go test -count=1 -v ./test/integration/
+      - name: Differential tests against Chroma 1.5.9
+        env:
+          CHROMA_URL: http://localhost:8000
+          KALEID_URL: http://localhost:8001
+        run: go test -count=1 -v ./test/compat/
+      - name: Examples and sample apps
+        env:
+          KALEID_URL: http://localhost:8001
+          KALEID_AUTH_URL: http://localhost:8002
+          KALEID_TOKEN: ci-token
+        run: test/examples/run.sh
+      - name: Kaleid log
+        if: failure()
+        run: cat kaleid.log
+
+  upstream:
+    name: Chroma test suite (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            args: >-
+              chromadb/test --ignore-glob=chromadb/test/property/* --ignore-glob=chromadb/test/stress/*
+              --ignore=chromadb/test/test_cli.py --ignore-glob=chromadb/test/distributed/*
+          - name: property-add
+            args: chromadb/test/property/test_add.py
+          - name: property-collections
+            args: chromadb/test/property/test_collections.py
+          - name: property-tenant-database
+            args: chromadb/test/property/test_collections_with_database_tenant.py
+          - name: property-embeddings
+            args: chromadb/test/property/test_embeddings.py
+          - name: property-filtering
+            args: chromadb/test/property/test_filtering.py
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: kaleid
+          POSTGRES_PASSWORD: kaleid
+          POSTGRES_DB: kaleid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaleid"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: test/upstream/requirements.txt
+      - name: Build and start Kaleid
+        run: |
+          go build -o bin/kaleid ./cmd/kaleid
+          KALEID_DATABASE_URL="$DATABASE_URL" KALEID_ALLOW_RESET=true KALEID_LISTEN=:8000 ./bin/kaleid > kaleid.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/v2/heartbeat && break; sleep 1; done
+          curl -sf localhost:8000/api/v2/heartbeat
+      - name: Run upstream tests
+        env:
+          PYTHON: python
+          PROPERTY_TESTING_PRESET: fast
+        run: test/upstream/run.sh ${{ matrix.args }}
+      - name: Kaleid log
+        if: failure()
+        run: tail -n 200 kaleid.log
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: kaleid:ci
