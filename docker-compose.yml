@@ -2,6 +2,8 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    # Parallel HNSW index builds use dynamic shared memory.
+    shm_size: 1gb
     environment:
       POSTGRES_USER: kaleid
       POSTGRES_PASSWORD: kaleid

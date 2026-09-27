@@ -151,6 +151,24 @@ Where Kaleid differs on purpose:
 - **Writes** hold a per-collection advisory lock. Each batch is applied in
   request order with Chroma's log semantics and written in bulk with `unnest`.
 
+## Performance notes
+
+Measured on one workstation (PostgreSQL 17 in Docker, Chroma 1.5.9 `chroma run`),
+with 20,000 random 384-dimensional vectors, cosine distance, `n_results=10`, and
+the Python client:
+
+| | Ingest | Query | Filtered query (1% selectivity) | Recall@10 |
+|---|---|---|---|---|
+| Chroma 1.5.9 | 4,560/s | 4.7 ms | 12.5 ms | 0.34 |
+| Kaleid, HNSW built at 10k (default) | 818/s | 5.3 ms | 3.5 ms | 0.40 |
+| Kaleid, no index (exact scan) | 12,800/s | 9.1 ms | 2.3 ms | 1.00 |
+
+pgvector maintains its HNSW graph one row at a time. Once a collection's index
+exists, that per-row maintenance dominates ingest cost. For large bulk loads,
+raise `--index-threshold` so the index is built in one pass after the data is
+loaded. Filtered queries are fast because the metadata filter uses a GIN index,
+and pgvector's iterative scans stop as soon as they have enough matches.
+
 ## Development
 
 ```sh

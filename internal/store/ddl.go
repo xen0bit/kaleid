@@ -3,11 +3,13 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/xen0bit/kaleid/internal/apierr"
 	"github.com/xen0bit/kaleid/internal/collection"
@@ -100,15 +102,17 @@ func (s *Store) buildIndex(ctx context.Context, tx pgx.Tx, id uuid.UUID, dim int
 		return err
 	}
 	ops, _ := opClass(h.Space)
+	var create string
 	switch st.Kind {
 	case "vector":
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX %s ON %s USING hnsw (embedding vector_%s) WITH (m = %d, ef_construction = %d)`,
-			name, t, ops, st.M, st.EfConstruction)); err != nil {
-			return err
-		}
+		create = fmt.Sprintf(`CREATE INDEX %s ON %s USING hnsw (embedding vector_%s) WITH (m = %d, ef_construction = %d)`,
+			name, t, ops, st.M, st.EfConstruction)
 	case "halfvec":
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX %s ON %s USING hnsw ((embedding::halfvec(%d)) halfvec_%s) WITH (m = %d, ef_construction = %d)`,
-			name, t, dim, ops, st.M, st.EfConstruction)); err != nil {
+		create = fmt.Sprintf(`CREATE INDEX %s ON %s USING hnsw ((embedding::halfvec(%d)) halfvec_%s) WITH (m = %d, ef_construction = %d)`,
+			name, t, dim, ops, st.M, st.EfConstruction)
+	}
+	if create != "" {
+		if err := createIndexWithFallback(ctx, tx, create); err != nil {
 			return err
 		}
 	}
@@ -167,4 +171,27 @@ func (s *Store) ensureDimension(ctx context.Context, tx pgx.Tx, c *Collection, d
 	}
 	c.Index = &st
 	return nil
+}
+
+// createIndexWithFallback runs CREATE INDEX, retrying as a serial build when
+// a parallel build cannot allocate dynamic shared memory (SQLSTATE 53100,
+// typical of containers with a small /dev/shm).
+func createIndexWithFallback(ctx context.Context, tx pgx.Tx, create string) error {
+	if _, err := tx.Exec(ctx, `SAVEPOINT kaleid_index_build`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, create)
+	if err == nil {
+		_, err = tx.Exec(ctx, `RELEASE SAVEPOINT kaleid_index_build`)
+		return err
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "53100" {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT kaleid_index_build; SET LOCAL max_parallel_maintenance_workers = 0`); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, create)
+	return err
 }
