@@ -1,0 +1,12 @@
+chromadb==1.5.9
+hypothesis[numpy]==6.112.2
+pytest
+pytest-asyncio
+pytest-xdist
+pytest-rerunfailures
+psutil
+httpx
+pandas
+mmh3
+fastapi
+opentelemetry-instrumentation-fastapi>=0.41b0

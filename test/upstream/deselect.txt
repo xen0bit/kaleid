@@ -1,0 +1,2 @@
+# Upstream Chroma tests deselected when running against Kaleid, one node id
+# per line, each with the reason.

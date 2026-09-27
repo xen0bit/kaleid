@@ -1,0 +1,31 @@
+# Local development: PostgreSQL 17 + pgvector, and Kaleid on :8000.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: kaleid
+      POSTGRES_PASSWORD: kaleid
+      POSTGRES_DB: kaleid
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaleid"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  kaleid:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KALEID_DATABASE_URL: postgres://kaleid:kaleid@postgres:5432/kaleid?sslmode=disable
+      KALEID_ALLOW_RESET: "false"
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:
